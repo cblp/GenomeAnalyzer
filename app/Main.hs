@@ -3,6 +3,7 @@
 
 module Main (decodeWord, main) where
 
+import           Control.Monad.Extra          (whenJustM)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import           Control.Monad.Trans          (lift)
 import           Control.Monad.Trans.Resource (runResourceT)
@@ -48,11 +49,9 @@ collectGWords = go []
     go (n1 : rest@(n2 : n3 : n4 : n5 : n6 : _)) nucs = do
         Streaming.yield [n1, n2, n3, n4, n5, n6]
         go rest nucs
-    go buf nucs = do
-        mnuc <- lift $ Streaming.uncons nucs
-        case mnuc of
-            Nothing           -> pure ()
-            Just (nuc, nucs') -> go (buf ++ [nuc]) nucs'
+    go buf nucs =
+        whenJustM (lift $ Streaming.uncons nucs) $ \(nuc, nucs') ->
+            go (buf ++ [nuc]) nucs'
 
 buildStat :: MonadIO m => StreamOf GWord m -> m Stat
 buildStat = Streaming.foldM_ step initialize extract
