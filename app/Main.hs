@@ -1,74 +1,70 @@
-module Main (main) where
+{-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE PatternSynonyms #-}
 
-import           Data.Vector.Unboxed (Vector)
-import qualified Data.Vector.Unboxed as Vec
-import           Data.Word           (Word16)
-import           System.IO           (Handle, IOMode (ReadMode), hGetChar,
-                                      hGetLine, hIsEOF, openFile)
+module Main (decodeWord, main) where
 
-data Nucleotide = A | C | T | G deriving (Enum, Eq, Ord, Show)
+import           Control.Monad.IO.Class       (MonadIO, liftIO)
+import           Control.Monad.Trans          (lift)
+import           Control.Monad.Trans.Resource (runResourceT)
+import qualified Data.ByteString.Streaming    as BS
+import           Data.Vector.Unboxed          (Vector)
+import qualified Data.Vector.Unboxed          as Vector (freeze)
+import qualified Data.Vector.Unboxed.Mutable  as Vector
+import           Data.Word                    (Word16, Word8)
+import           Streaming                    (Of, Stream)
+import qualified Streaming.Prelude            as Streaming
+
+type StreamOf a m = Stream (Of a) m ()
+
+data Nucleotide = A | C | T | G deriving (Enum, Eq, Ord, Read, Show)
+
+decodeNucleotide :: Word8 -> Maybe Nucleotide
+decodeNucleotide = \case
+    65  -> Just A
+    67  -> Just C
+    71  -> Just G
+    84  -> Just T
+    _   -> Nothing
 
 type GWord = [Nucleotide]
 
-codeWord :: GWord -> Word16
-codeWord gWord =
+type Stat = Vector Int
+
+encodeWord :: GWord -> Word16
+encodeWord gWord =
     fromIntegral $
     sum [4 ^ i * fromEnum nuc | (i, nuc) <- zip [0 :: Int ..] gWord]
 
--- decodeWord :: Word16 -> GWord
--- decodeWord word =
---     [toEnum . fromIntegral $ word `div` 4 ^ i `mod` 4 | i <- [0 .. 5 :: Int]]
+decodeWord :: Word16 -> GWord
+decodeWord word =
+    [toEnum . fromIntegral $ word `div` 4 ^ i `mod` 4 | i <- [0 .. 5 :: Int]]
 
-readNucleotide :: Char -> Maybe Nucleotide
-readNucleotide symbol =
-    case symbol of
-        'A' -> Just A
-        'C' -> Just C
-        'T' -> Just T
-        'G' -> Just G
-        _   -> Nothing
+countWords :: MonadIO m => StreamOf Word8 m -> m Stat
+countWords = buildStat . collectGWords . Streaming.mapMaybe decodeNucleotide
 
-readWord :: Int -> Handle -> IO GWord
-readWord 0         _    = pure []
-readWord nuclCount file = do
-    eof <- hIsEOF file
-    if not eof then
-        do
-            symbol <- hGetChar file
-            case readNucleotide symbol of
-                Just nucleotide -> do
-                    gWord <- readWord (nuclCount - 1) file
-                    pure $ nucleotide : gWord
-                Nothing ->
-                    readWord nuclCount file
-    else
-        pure []
+collectGWords :: Monad m => StreamOf Nucleotide m -> StreamOf GWord m
+collectGWords = go []
+  where
+    go (n1 : rest@(n2 : n3 : n4 : n5 : n6 : _)) nucs = do
+        Streaming.yield [n1, n2, n3, n4, n5, n6]
+        go rest nucs
+    go buf nucs = do
+        mnuc <- lift $ Streaming.uncons nucs
+        case mnuc of
+            Nothing           -> pure ()
+            Just (nuc, nucs') -> go (buf ++ [nuc]) nucs'
 
-countWords :: FilePath -> IO (Vector Word16)
-countWords filepath = do
-    genomeHandle <- openFile filepath ReadMode
-    _ <- hGetLine genomeHandle
-    firstWord <- readWord 6 genomeHandle
-    countWord firstWord (Vec.replicate 4096 0) genomeHandle
-
-countWord :: GWord -> Vector Word16 -> Handle -> IO (Vector Word16)
-countWord gWord vector handle = do
-    eof <- hIsEOF handle
-    if not eof then do
-        symbol <- hGetChar handle
-        case readNucleotide symbol of
-            Just nucleotide -> do
-                let newWord = tail gWord ++ [nucleotide]
-                countWord
-                    newWord
-                    (Vec.accum (+) vector [(fromIntegral $ codeWord gWord, 1)])
-                    handle
-            Nothing         ->
-                countWord gWord vector handle
-    else
-        pure (Vec.accum (+) vector [(fromIntegral $ codeWord gWord, 1)])
+buildStat :: MonadIO m => StreamOf GWord m -> m Stat
+buildStat = Streaming.foldM_ step initialize extract
+  where
+    initialize = liftIO $ Vector.new (4 ^ (6 :: Int))
+    step stat gword = do
+        liftIO . Vector.modify stat succ . fromIntegral $ encodeWord gword
+        pure stat
+    extract = liftIO . Vector.freeze
 
 main :: IO ()
 main = do
-    wordsCount <- countWords "genome.fna"
-    print wordsCount
+    let bytes = BS.unpack $ BS.readFile "genome.fna"
+    stat <- runResourceT $ countWords bytes
+    print stat
