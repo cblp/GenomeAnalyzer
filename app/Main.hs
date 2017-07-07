@@ -1,5 +1,7 @@
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE PatternSynonyms #-}
+{-# OPTIONS_GHC -ddump-simpl -dsuppress-module-prefixes -dsuppress-uniques -Wno-unused-imports #-}
+
+{-# LANGUAGE LambdaCase  #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Main (decodeWord, main) where
 
@@ -15,16 +17,19 @@ import           Data.Word                    (Word16, Word8)
 import           Streaming                    (Of, Stream)
 import qualified Streaming.Prelude            as Streaming
 
+import           Lib                          (ordP)
+
 type StreamOf a m = Stream (Of a) m ()
 
-data Nucleotide = A | C | T | G deriving (Enum, Eq, Ord, Read, Show)
+data Nucleotide = A | C | T | G deriving (Enum)
 
+{-# NOINLINE decodeNucleotide #-}
 decodeNucleotide :: Word8 -> Maybe Nucleotide
 decodeNucleotide = \case
-    65  -> Just A
-    67  -> Just C
-    71  -> Just G
-    84  -> Just T
+    [ordP|A|] -> Just A
+    [ordP|C|] -> Just C
+    [ordP|G|] -> Just G
+    [ordP|T|] -> Just T
     _   -> Nothing
 
 type GWord = [Nucleotide]
