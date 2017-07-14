@@ -1,5 +1,5 @@
-{-# LANGUAGE LambdaCase  #-}
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Main (decodeWord, main) where
 
@@ -15,19 +15,29 @@ import           Data.Word                    (Word16, Word8)
 import           Streaming                    (Of, Stream)
 import qualified Streaming.Prelude            as Streaming
 
-import           Lib                          (ordP)
-
 type StreamOf a m = Stream (Of a) m ()
 
 data Nucleotide = A | C | T | G deriving (Enum)
 
+pattern LatinCapitalLetterA :: (Num a, Eq a) => a
+pattern LatinCapitalLetterA = 0x41
+
+pattern LatinCapitalLetterC :: (Num a, Eq a) => a
+pattern LatinCapitalLetterC = 0x43
+
+pattern LatinCapitalLetterG :: (Num a, Eq a) => a
+pattern LatinCapitalLetterG = 0x47
+
+pattern LatinCapitalLetterT :: (Num a, Eq a) => a
+pattern LatinCapitalLetterT = 0x54
+
 decodeNucleotide :: Word8 -> Maybe Nucleotide
 decodeNucleotide = \case
-    [ordP|A|] -> Just A
-    [ordP|C|] -> Just C
-    [ordP|G|] -> Just G
-    [ordP|T|] -> Just T
-    _   -> Nothing
+    LatinCapitalLetterA -> Just A
+    LatinCapitalLetterC -> Just C
+    LatinCapitalLetterG -> Just G
+    LatinCapitalLetterT -> Just T
+    _                   -> Nothing
 
 type GWord = [Nucleotide]
 
