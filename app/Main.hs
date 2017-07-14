@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -ddump-simpl -dsuppress-module-prefixes -dsuppress-uniques -Wno-unused-imports #-}
-
 {-# LANGUAGE LambdaCase  #-}
 {-# LANGUAGE QuasiQuotes #-}
 
@@ -23,7 +21,6 @@ type StreamOf a m = Stream (Of a) m ()
 
 data Nucleotide = A | C | T | G deriving (Enum)
 
-{-# NOINLINE decodeNucleotide #-}
 decodeNucleotide :: Word8 -> Maybe Nucleotide
 decodeNucleotide = \case
     [ordP|A|] -> Just A
@@ -51,12 +48,13 @@ countWords = buildStat . collectGWords . Streaming.mapMaybe decodeNucleotide
 collectGWords :: Monad m => StreamOf Nucleotide m -> StreamOf GWord m
 collectGWords = go []
   where
-    go (n1 : rest@(n2 : n3 : n4 : n5 : n6 : _)) nucs = do
-        Streaming.yield [n1, n2, n3, n4, n5, n6]
-        go rest nucs
-    go buf nucs =
-        whenJustM (lift $ Streaming.uncons nucs) $ \(nuc, nucs') ->
-            go (buf ++ [nuc]) nucs'
+    go buf nucs = case buf of
+        n1 : rest@(n2 : n3 : n4 : n5 : n6 : _) -> do
+            Streaming.yield [n1, n2, n3, n4, n5, n6]
+            go rest nucs
+        _ ->
+            whenJustM (lift $ Streaming.uncons nucs) $ \(nuc, nucs') ->
+                go (buf ++ [nuc]) nucs'
 
 buildStat :: MonadIO m => StreamOf GWord m -> m Stat
 buildStat = Streaming.foldM_ step initialize extract
